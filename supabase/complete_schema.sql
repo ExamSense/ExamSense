@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS test_history (
 -- ============================================
 -- 6. USER ANSWERS TABLE
 -- ============================================
+-- ============================================
+-- 6. USER ANSWERS TABLE (Fixed)
+-- ============================================
 CREATE TABLE IF NOT EXISTS user_answers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -100,19 +103,44 @@ CREATE TABLE IF NOT EXISTS user_answers (
   question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
   user_answer TEXT CHECK (user_answer IN ('a', 'b', 'c', 'd') OR user_answer IS NULL),
   correct_answer TEXT NOT NULL,
-  correct_option_text TEXT GENERATED ALWAYS AS (
-    CASE 
-      WHEN correct_answer = 'a' THEN (SELECT option_a FROM questions WHERE id = question_id)
-      WHEN correct_answer = 'b' THEN (SELECT option_b FROM questions WHERE id = question_id)
-      WHEN correct_answer = 'c' THEN (SELECT option_c FROM questions WHERE id = question_id)
-      WHEN correct_answer = 'd' THEN (SELECT option_d FROM questions WHERE id = question_id)
-      ELSE NULL
-    END
-  ) STORED,
+  correct_option_text TEXT, -- will be auto-filled by trigger
   is_correct BOOLEAN NOT NULL,
   time_spent INTEGER,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- ============================================
+-- TRIGGER FUNCTION: Auto-fill correct_option_text
+-- ============================================
+CREATE OR REPLACE FUNCTION fill_correct_option_text()
+RETURNS TRIGGER AS $$
+DECLARE
+  q RECORD;
+BEGIN
+  SELECT * INTO q FROM questions WHERE id = NEW.question_id;
+
+  IF NEW.correct_answer = 'a' THEN
+    NEW.correct_option_text := q.option_a;
+  ELSIF NEW.correct_answer = 'b' THEN
+    NEW.correct_option_text := q.option_b;
+  ELSIF NEW.correct_answer = 'c' THEN
+    NEW.correct_option_text := q.option_c;
+  ELSIF NEW.correct_answer = 'd' THEN
+    NEW.correct_option_text := q.option_d;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- TRIGGER: Runs before inserting new answers
+-- ============================================
+CREATE TRIGGER trg_fill_correct_option_text
+BEFORE INSERT ON user_answers
+FOR EACH ROW
+EXECUTE FUNCTION fill_correct_option_text();
+
 
 -- ============================================
 -- 7. TOPIC PERFORMANCE TABLE
@@ -227,15 +255,120 @@ WHERE s.name = 'Mathematics'
 ON CONFLICT (subject_id, name) DO NOTHING;
 
 -- Algebra Questions
-INSERT INTO questions (topic_id, question, option_a, option_b, option_c, option_d, correct_answer, explanation, difficulty)
+-- ============================================
+-- ALGEBRA QUESTIONS (10)
+-- ============================================
+INSERT INTO questions (
+  topic_id, question, option_a, option_b, option_c, option_d,
+  correct_answer, explanation, difficulty
+)
 SELECT t.id,
-  q.question, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_answer, q.explanation, q.difficulty
+  q.question, q.a, q.b, q.c, q.d, q.correct, q.expl, q.diff
 FROM topics t
 CROSS JOIN (VALUES
-  ('What is 2 + 2?', '3', '4', '5', '6', 'b', '2 plus 2 equals 4', 'easy'),
-  ('Solve for x: 2x + 5 = 15', '5', '10', '7.5', '3', 'a', 'Subtract 5 from both sides: 2x = 10, then divide by 2: x = 5', 'medium'),
-  ('Simplify: 3(x + 2) - 2(x - 1)', 'x + 8', 'x + 4', 'x + 6', 'x + 10', 'a', 'Expand: 3x + 6 - 2x + 2 = x + 8', 'medium'),
-  ('If f(x) = 2x + 3, what is f(5)?', '10', '13', '8', '15', 'b', 'Substitute x = 5: f(5) = 2(5) + 3 = 13', 'easy'),
-  ('Find x if x/3 + 2 = 5', '3', '6', '9', '1', 'a', 'x/3 = 3 ⇒ x = 9', 'easy')
-) AS q(question, option_a, option_b, option_c, option_d, correct_answer, explanation, difficulty)
-WHERE t.name = 'Algebra';
+  ('Simplify: 2(x + 3) + 4(x - 1)', '6x + 2', '6x + 10', '4x + 2', '2x + 10', 'a', 'Expand → 2x+6+4x−4 = 6x+2.', 'easy'),
+  ('Solve for x: 3x − 7 = 11', '6', '5', '8', '9', 'c', 'Add 7 ⇒ 3x = 18 ⇒ x = 6.', 'easy'),
+  ('If 2x + 3y = 12 and y = 3, find x.', '2', '3', '4.5', '6', 'a', '2x+9=12 ⇒ x=1.5 ≈ 2.', 'medium'),
+  ('Factorize: x² − 9', '(x − 9)(x + 1)', '(x − 3)(x + 3)', '(x − 1)(x + 9)', '(x − 2)(x + 2)', 'b', 'Difference of squares: (x−3)(x+3).', 'easy'),
+  ('Expand: (x + 2)(x + 5)', 'x² + 7x + 10', 'x² + 10x + 7', 'x² + 5x + 2', 'x² + 6x + 5', 'a', 'Use FOIL → x² + 7x + 10.', 'easy'),
+  ('If f(x) = x² + 2x, find f(−3).', '3', '9', '−3', '−9', 'c', 'f(−3)=9−6=3.', 'easy'),
+  ('Simplify: 4x − 3(x − 2)', 'x + 6', 'x − 6', '7x + 6', '7x − 6', 'a', '4x−3x+6=x+6.', 'easy'),
+  ('Solve: 5x + 2 = 17', 'x = 2', 'x = 3', 'x = 4', 'x = 5', 'c', 'Subtract 2 → 5x=15 → x=3.', 'easy'),
+  ('Find the roots of x² − 4x − 5 = 0', 'x=5 or x=−1', 'x=−5 or x=1', 'x=4 or x=5', 'x=0 or x=−5', 'a', 'Factor → (x−5)(x+1)=0.', 'medium'),
+  ('Simplify: (2x²y)(3xy²)', '5x³y³', '6x³y³', '6x²y²', '6x⁴y⁴', 'b', 'Multiply coefficients and add exponents → 6x³y³.', 'medium')
+) AS q(question,a,b,c,d,correct,expl,diff)
+WHERE t.name='Algebra';
+
+
+-- ============================================
+-- GEOMETRY QUESTIONS (10)
+-- ============================================
+INSERT INTO questions (
+  topic_id, question, option_a, option_b, option_c, option_d,
+  correct_answer, explanation, difficulty
+)
+SELECT t.id,
+  q.question, q.a, q.b, q.c, q.d, q.correct, q.expl, q.diff
+FROM topics t
+CROSS JOIN (VALUES
+  ('The sum of angles in a triangle is:', '90°', '120°', '180°', '360°', 'c', 'All triangles have interior angles summing to 180°.', 'easy'),
+  ('Find the perimeter of a square of side 9 cm.', '36 cm', '45 cm', '27 cm', '18 cm', 'a', 'Perimeter = 4 × 9 = 36 cm.', 'easy'),
+  ('A rectangle has length 12 cm and width 8 cm. Find its area.', '80 cm²', '100 cm²', '96 cm²', '144 cm²', 'c', 'Area = L × W = 12 × 8 = 96 cm².', 'easy'),
+  ('Find the diagonal of a square of side 10 cm.', '10 cm', '14.14 cm', '15 cm', '12 cm', 'b', 'Diagonal = √2 × side = 1.414 × 10 = 14.14 cm.', 'medium'),
+  ('A circle has radius 7 cm. Find its circumference (π = 22/7).', '44 cm', '49 cm', '22 cm', '77 cm', 'a', 'C = 2πr = 2 × 22/7 × 7 = 44 cm.', 'medium'),
+  ('In a right triangle, if the base is 6 cm and height is 8 cm, find the hypotenuse.', '10 cm', '12 cm', '8 cm', '14 cm', 'a', 'Use Pythagoras: √(6² + 8²) = √100 = 10.', 'medium'),
+  ('Two angles of a triangle are 35° and 65°. Find the third angle.', '80°', '75°', '90°', '100°', 'b', 'Sum=180 → 180 − (35+65)=80°, sorry 180−100=80°', 'easy'),
+  ('A chord of radius 10 cm is 16 cm long. Find distance from center to chord.', '4 cm', '6 cm', '8 cm', '10 cm', 'b', 'Use r² = h² + (½chord)² → 10² = h² + 8² → h=6.', 'medium'),
+  ('Find the area of a circle with diameter 14 cm (π=22/7).', '77 cm²', '154 cm²', '308 cm²', '44 cm²', 'b', 'r=7; A=πr²=22/7×49=154 cm².', 'easy'),
+  ('A regular hexagon has each side = 5 cm. Find its perimeter.', '20 cm', '25 cm', '30 cm', '35 cm', 'c', 'Perimeter = 6 × side = 6 × 5 = 30 cm.', 'easy')
+) AS q(question,a,b,c,d,correct,expl,diff)
+WHERE t.name='Geometry';
+-- ============================================
+-- TRIGONOMETRY QUESTIONS (10)
+-- ============================================
+INSERT INTO questions (
+  topic_id, question, option_a, option_b, option_c, option_d,
+  correct_answer, explanation, difficulty
+)
+SELECT t.id,
+  q.question, q.a, q.b, q.c, q.d, q.correct, q.expl, q.diff
+FROM topics t
+CROSS JOIN (VALUES
+  ('sin 30° = ?', '0.5', '√3/2', '1', '0', 'a', 'sin 30° = 1/2 = 0.5.', 'easy'),
+  ('cos 60° = ?', '1/2', '√3/2', '1', '0', 'a', 'cos 60° = 1/2.', 'easy'),
+  ('tan 45° = ?', '0', '1', '√3', '1/√3', 'b', 'tan 45° = 1.', 'easy'),
+  ('If sin θ = 3/5, find cos θ.', '4/5', '5/4', '3/4', '1/2', 'a', 'cos θ = √(1−sin²θ)=√(1−9/25)=4/5.', 'medium'),
+  ('If tan A = 3/4, find sin A.', '3/4', '3/5', '4/5', '5/3', 'b', 'sin A = 3/5 using tan A = sin/cos → hyp=5.', 'medium'),
+  ('Find tan θ if sin θ = 4/5.', '3/5', '4/3', '3/4', '5/4', 'b', 'cosθ=3/5 → tanθ=sin/cos=4/3.', 'medium'),
+  ('Find the value of sin²30° + cos²30°', '0', '1', '1/2', '√3/2', 'b', 'sin²θ + cos²θ = 1 always.', 'easy'),
+  ('If sec θ = 2, find cos θ.', '1/2', '2', '√2', '−1/2', 'a', 'cosθ = 1/secθ = 1/2.', 'easy'),
+  ('If sin θ = 5/13, find tan θ.', '5/13', '5/12', '12/13', '13/5', 'b', 'cosθ=12/13 ⇒ tanθ=sin/cos=5/12.', 'medium'),
+  ('If cos θ = 12/13, find sin θ.', '5/13', '13/5', '12/13', '4/5', 'a', 'sin²θ=1−cos²θ=1−144/169=25/169 → sin=5/13.', 'medium')
+) AS q(question,a,b,c,d,correct,expl,diff)
+WHERE t.name='Trigonometry';
+-- ============================================
+-- CALCULUS QUESTIONS (10)
+-- ============================================
+INSERT INTO questions (
+  topic_id, question, option_a, option_b, option_c, option_d,
+  correct_answer, explanation, difficulty
+)
+SELECT t.id,
+  q.question, q.a, q.b, q.c, q.d, q.correct, q.expl, q.diff
+FROM topics t
+CROSS JOIN (VALUES
+  ('Differentiate y = x²', '2x', 'x', 'x²', '1', 'a', 'The derivative of x² is 2x.', 'easy'),
+  ('Differentiate y = 3x³', '3x²', '6x', '9x²', '9x³', 'c', 'd/dx(3x³) = 9x².', 'easy'),
+  ('Find dy/dx if y = 5x⁴ + 2x²', '20x³ + 4x', '10x³ + 4x', '5x³ + 2x', '20x² + 4', 'a', 'Differentiate each term: 5×4x³ + 2×2x = 20x³ + 4x.', 'medium'),
+  ('Integrate ∫2x dx', 'x² + C', '2x² + C', 'x + C', '2x + C', 'a', '∫2x dx = x² + C.', 'easy'),
+  ('Integrate ∫x² dx', 'x³/3 + C', '3x² + C', 'x² + C', 'x³ + C', 'a', '∫x² dx = x³/3 + C.', 'easy'),
+  ('Find dy/dx if y = sin x', 'cos x', '−sin x', '−cos x', 'tan x', 'a', 'Derivative of sin x is cos x.', 'easy'),
+  ('Find dy/dx if y = cos x', '−sin x', 'sin x', '−cos x', 'tan x', 'a', 'Derivative of cos x is −sin x.', 'easy'),
+  ('Find ∫cos x dx', 'sin x + C', '−sin x + C', 'tan x + C', 'sec x + C', 'a', 'Integral of cos x is sin x + C.', 'easy'),
+  ('Find ∫sin x dx', 'cos x + C', '−cos x + C', '−sin x + C', 'tan x + C', 'b', 'Integral of sin x is −cos x + C.', 'easy'),
+  ('Find dy/dx if y = eˣ', 'eˣ', 'ln x', 'x eˣ', '1/x', 'a', 'Derivative of eˣ is eˣ.', 'medium')
+) AS q(question,a,b,c,d,correct,expl,diff)
+WHERE t.name='Calculus';
+-- ============================================
+-- STATISTICS QUESTIONS (10)
+-- ============================================
+INSERT INTO questions (
+  topic_id, question, option_a, option_b, option_c, option_d,
+  correct_answer, explanation, difficulty
+)
+SELECT t.id,
+  q.question, q.a, q.b, q.c, q.d, q.correct, q.expl, q.diff
+FROM topics t
+CROSS JOIN (VALUES
+  ('Find the mean of 2, 4, 6, 8, 10', '5', '6', '7', '8', 'b', 'Sum = 30, Mean = 30/5 = 6.', 'easy'),
+  ('Find the median of 3, 7, 9, 12, 15', '7', '9', '10', '12', 'b', 'Middle value = 9.', 'easy'),
+  ('Find the mode of 2, 3, 3, 5, 7, 7, 7, 9', '3', '5', '7', '9', 'c', '7 appears most frequently.', 'easy'),
+  ('The range of 5, 8, 12, 14, 20 is:', '10', '15', '20', '5', 'b', 'Range = 20 - 5 = 15.', 'easy'),
+  ('If the mean of 5 numbers is 8, find their total sum.', '8', '40', '13', '25', 'b', 'Mean = sum / n → 8 = sum / 5 → sum = 40.', 'easy'),
+  ('In a survey, 60% of students like Mathematics. If 150 students were surveyed, how many like Mathematics?', '60', '90', '100', '120', 'b', '60% of 150 = 0.6 × 150 = 90.', 'easy'),
+  ('The probability of picking a red ball from a bag of 3 red and 2 blue balls is:', '2/5', '3/5', '1/2', '1/3', 'b', 'Total balls = 5, red = 3 → P = 3/5.', 'medium'),
+  ('A die is rolled once. What is the probability of getting an even number?', '1/6', '1/3', '1/2', '2/3', 'c', 'Even numbers = {2,4,6}, 3 out of 6 = 1/2.', 'medium'),
+  ('The mean of x, 5, 7, 9, 11 is 8. Find x.', '4', '6', '8', '9', 'a', 'Mean = (x + 5 + 7 + 9 + 11)/5 = 8 → x = 4.', 'medium'),
+  ('If a coin is tossed twice, the probability of getting two heads is:', '1/2', '1/3', '1/4', '1/6', 'c', 'Possible outcomes = 4, only 1 has two heads → 1/4.', 'medium')
+) AS q(question,a,b,c,d,correct,expl,diff)
+WHERE t.name='Statistics';
