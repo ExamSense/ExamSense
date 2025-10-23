@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signup, isLoading, error: authError } = useAuth();
+  const { signUp, loading, error: authError } = useAuth();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -122,7 +122,7 @@ export default function Signup() {
     }
 
     try {
-      await signup(formData.name, formData.email, formData.password);
+      await signUp(formData.email, formData.password, formData.name);
       
       // Success! Show toast and redirect
       // Note: You might want to use a proper toast library
@@ -288,14 +288,14 @@ export default function Signup() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={!isFormValid() || isLoading}
+              disabled={!isFormValid() || loading}
               className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors flex items-center justify-center ${
-                !isFormValid() || isLoading
+                !isFormValid() || loading
                   ? 'bg-orange-300 cursor-not-allowed opacity-50'
                   : 'bg-orange-400 hover:bg-orange-500'
               }`}
             >
-              {isLoading ? (
+              {loading ? (
                 <>
                   <Loader2 className="animate-spin mr-2" size={20} />
                   Creating Account...

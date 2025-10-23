@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, isLoading, error: authError } = useAuth();
+  const { signIn, loading, error: authError } = useAuth();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -111,7 +111,7 @@ export default function Login() {
     }
 
     try {
-      await login(formData.email, formData.password);
+      await signIn(formData.email, formData.password);
       
       // Success! Show toast and redirect immediately
       // TODO: Replace with your toast library (e.g., react-hot-toast)
@@ -233,14 +233,14 @@ export default function Login() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={!isFormValid() || isLoading}
+              disabled={!isFormValid() || loading}
               className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors flex items-center justify-center ${
-                !isFormValid() || isLoading
+                !isFormValid() || loading
                   ? 'bg-orange-300 cursor-not-allowed opacity-50'
                   : 'bg-orange-400 hover:bg-orange-500'
               }`}
             >
-              {isLoading ? (
+              {loading ? (
                 <>
                   <Loader2 className="animate-spin mr-2" size={20} />
                   Logging in...
