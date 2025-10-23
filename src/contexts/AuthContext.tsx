@@ -1,238 +1,140 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User } from '../utils/auth';
-import {
-  generateAccessToken,
-  generateUserId,
-  hashPassword,
-  verifyPassword,
-  validateEmail
-} from '../utils/auth';
-import {
-  initializeStorage,
-  getAllUsers,
-  saveUser,
-  getUserByEmail,
-  updateUser,
-  getCurrentUser,
-  setCurrentUser,
-  clearCurrentUser
-} from '../services/localStorageService';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { Session, User } from "@supabase/supabase-js";
+import { supabase } from "../supabaseClient"; // adjust if path differs
 
-// Auth Context Type Definition
+// ----------------------------
+// Types
+// ----------------------------
 interface AuthContextType {
   user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
+  session: Session | null;
+  loading: boolean;
   error: string | null;
-  signup: (name: string, email: string, password: string) => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  signUp: (email: string, password: string, fullName?: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
 }
 
+// ----------------------------
 // Create Context
+// ----------------------------
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Provider Props
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-// Auth Provider Component
-export function AuthProvider({ children }: AuthProviderProps) {
+// ----------------------------
+// Provider Component
+// ----------------------------
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true); // ← Start as TRUE
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Derived state
-  const isAuthenticated = user !== null;
-
-  // Initialize storage and check for existing session on mount
+  // Fetch and listen to session changes
   useEffect(() => {
-    const initAuth = async () => {
-      setIsLoading(true); // Set loading to true
-      
-      try {
-        // Initialize storage structure
-        initializeStorage();
-
-        // Small delay to prevent flash
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        // Check for existing session
-        const existingUser = getCurrentUser();
-        if (existingUser) {
-          console.log('Existing session found:', existingUser.email);
-          setUser(existingUser);
-        } else {
-          console.log('No existing session found');
-        }
-      } catch (err) {
-        console.error('Error initializing auth:', err);
-        setError('Failed to initialize authentication');
-      } finally {
-        setIsLoading(false); // ← Set loading to false after check
-      }
+    const fetchSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session ?? null);
+      setUser(data.session?.user ?? null);
+      setLoading(false);
     };
+    fetchSession();
 
-    initAuth();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // Signup function
-  const signup = async (name: string, email: string, password: string): Promise<void> => {
-    setIsLoading(true);
-    setError(null);
+  // ----------------------------
+  // Auth Functions
+  // ----------------------------
 
-    try {
-      // Validate inputs
-      if (name.trim().length < 3) {
-        throw new Error('Name must be at least 3 characters long');
-      }
-
-      if (!validateEmail(email)) {
-        throw new Error('Please enter a valid email address');
-      }
-
-      if (password.length < 6) {
-        throw new Error('Password must be at least 6 characters long');
-      }
-
-      // Check if email already exists
-      const existingUser = getUserByEmail(email);
-      if (existingUser) {
-        throw new Error('Email already registered');
-      }
-
-      // Generate user credentials
-      const userId = generateUserId();
-      const accessToken = generateAccessToken();
-      const hashedPassword = hashPassword(password);
-
-      // Create new user object
-      const newUser: User = {
-        userId,
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password: hashedPassword,
-        accessToken,
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        testsTaken: 0
-      };
-
-      // Save user to storage
-      const saved = saveUser(newUser);
-      if (!saved) {
-        throw new Error('Failed to save user. Please try again.');
-      }
-
-      // Set as current user
-      setCurrentUser(newUser);
-
-      // Update state
-      setUser(newUser);
-      
-      console.log('User signed up successfully:', newUser.email);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Signup failed';
-      setError(errorMessage);
-      throw err; // Re-throw so calling code can handle it
-    } finally {
-      setIsLoading(false);
+  const signUp = async (email: string, password: string, fullName?: string) => {
+    setLoading(true);
+    const { error, data } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName || "" },
+      },
+    });
+    
+    if (error) {
+      setLoading(false);
+      throw error;
     }
+
+    // Create user profile in your users table
+    if (data.user) {
+      await supabase.from('users').insert({
+        id: data.user.id,
+        email: data.user.email,
+        full_name: fullName || '',
+        created_at: new Date().toISOString()
+      });
+    }
+    
+    setLoading(false);
+    setSession(data.session ?? null);
+    setUser(data.user ?? null);
   };
 
-  // Login function
-  const login = async (email: string, password: string): Promise<void> => {
-    setIsLoading(true);
-    setError(null);
+  const signIn = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null); // Clear previous errors
 
-    try {
-      // Validate inputs
-      if (!email.trim() || !password) {
-        throw new Error('Email and password are required');
-      }
+    const { error: authError, data } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      // Get user by email
-      const foundUser = getUserByEmail(email);
-      if (!foundUser) {
-        throw new Error('No account found with this email');
-      }
+    setLoading(false);
 
-      // Verify password
-      const isPasswordValid = verifyPassword(password, foundUser.password);
-      if (!isPasswordValid) {
-        throw new Error('Invalid password');
-      }
-
-      // Update last login timestamp
-      const updatedUser: User = {
-        ...foundUser,
-        lastLogin: new Date().toISOString()
-      };
-
-      const updated = updateUser(foundUser.userId, { lastLogin: updatedUser.lastLogin });
-      if (!updated) {
-        console.warn('Failed to update last login timestamp');
-      }
-
-      // Set as current user
-      setCurrentUser(updatedUser);
-
-      // Update state
-      setUser(updatedUser);
-      
-      console.log('User logged in successfully:', updatedUser.email);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Login failed';
-      setError(errorMessage);
-      throw err; // Re-throw so calling code can handle it
-    } finally {
-      setIsLoading(false);
+    if (authError) {
+      setError(authError.message);
+      throw authError;
     }
+
+    setSession(data.session ?? null);
+    setUser(data.user ?? null);
   };
 
-  // Logout function
-  const logout = (): void => {
-    try {
-      // Clear current user from storage
-      clearCurrentUser();
-
-      // Reset state
-      setUser(null);
-      setError(null);
-
-      console.log('User logged out successfully');
-    } catch (err) {
-      console.error('Error during logout:', err);
-      setError('Failed to logout properly');
-    }
+  const signOut = async () => {
+    setLoading(true);
+    const { error } = await supabase.auth.signOut();
+    setLoading(false);
+    if (error) throw error;
+    setSession(null);
+    setUser(null);
   };
 
-  // Context value
-  const contextValue: AuthContextType = {
+  // ----------------------------
+  // Context Value
+  // ----------------------------
+  const value: AuthContextType = {
     user,
-    isAuthenticated,
-    isLoading,
+    session,
+    loading,
     error,
-    signup,
-    login,
-    logout
+    signUp,
+    signIn,
+    signOut,
   };
 
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
+  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+};
 
-// Custom hook to use auth context
-export function useAuth(): AuthContextType {
+// ----------------------------
+// Custom Hook
+// ----------------------------
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
-  
   return context;
-}
+};
