@@ -13,9 +13,18 @@ import {
   X,
   AlertCircle,
   CheckCircle,
+  Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getAvailableSubjects, getSubjectStatistics } from "@/data/questionBank";
+import { supabase } from "@/supabaseClient";
+
+// Define types
+interface Subject {
+  id: string;
+  name: string;
+  description: string | null;
+  question_count?: number;
+}
 
 const Subjects = () => {
   const navigate = useNavigate();
@@ -23,7 +32,8 @@ const Subjects = () => {
   const [selectedDiscipline, setSelectedDiscipline] = useState<string | null>(
     null
   );
-  const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
+  const [subjectsFromDB, setSubjectsFromDB] = useState<Subject[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const disciplines = [
     {
@@ -74,33 +84,97 @@ const Subjects = () => {
     (d) => d.id === selectedDiscipline
   );
 
-  // Load available subjects on mount
+  // Load subjects from Supabase on mount
   useEffect(() => {
-    const subjects = getAvailableSubjects();
-    setAvailableSubjects(subjects);
-  }, []);
+    async function fetchSubjects() {
+      setLoading(true);
+      try {
+        // Fetch subjects with question count
+        const { data: subjects, error: subjectsError } = await supabase
+          .from('subjects')
+          .select('*')
+          .order('name');
 
-  // Check if subject is available in question bank
-  const isSubjectAvailable = (subject: string): boolean => {
-    return availableSubjects.some(
-      s => s.toLowerCase() === subject.toLowerCase()
+        if (subjectsError) {
+          console.error('Error fetching subjects:', subjectsError);
+          toast({
+            title: "Error Loading Subjects",
+            description: "Failed to load subjects from database. Please refresh the page.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Get question count for each subject by joining through topics
+        const subjectsWithCount = await Promise.all(
+          (subjects || []).map(async (subject) => {
+            // First get all topics for this subject
+            const { data: topics } = await supabase
+              .from('topics')
+              .select('id')
+              .eq('subject_id', subject.id);
+            
+            if (!topics || topics.length === 0) {
+              return {
+                ...subject,
+                question_count: 0
+              };
+            }
+            
+            // Then count questions for these topics
+            const topicIds = topics.map(t => t.id);
+            const { count } = await supabase
+              .from('questions')
+              .select('*', { count: 'exact', head: true })
+              .in('topic_id', topicIds);
+            
+            return {
+              ...subject,
+              question_count: count || 0
+            };
+          })
+        );
+
+        setSubjectsFromDB(subjectsWithCount);
+      } catch (error) {
+        console.error('Error:', error);
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchSubjects();
+  }, [toast]);
+
+  // Check if subject is available in database
+  const isSubjectAvailable = (subjectName: string): boolean => {
+    return subjectsFromDB.some(
+      s => s.name.toLowerCase() === subjectName.toLowerCase()
     );
   };
 
   // Get question count for a subject
-  const getQuestionCount = (subject: string): number => {
-    if (!isSubjectAvailable(subject)) return 0;
-    const stats = getSubjectStatistics(subject);
-    return stats.totalQuestions;
+  const getQuestionCount = (subjectName: string): number => {
+    const subject = subjectsFromDB.find(
+      s => s.name.toLowerCase() === subjectName.toLowerCase()
+    );
+    return subject?.question_count || 0;
   };
 
   // Handle navigation to test page with state
   const handleStartTest = (subject: string) => {
     // Check if subject is available
     if (!isSubjectAvailable(subject)) {
+      const availableNames = subjectsFromDB.map(s => s.name);
       toast({
         title: "Subject Not Available",
-        description: `Questions for ${subject} are not available yet. Try ${availableSubjects.join(' or ')}.`,
+        description: `Questions for ${subject} are not available yet. Try ${availableNames.join(' or ')}.`,
         variant: "destructive",
       });
       return;
@@ -117,14 +191,32 @@ const Subjects = () => {
       return;
     }
 
+    // Get subject ID from database
+    const subjectData = subjectsFromDB.find(
+      s => s.name.toLowerCase() === subject.toLowerCase()
+    );
+
     // Navigate to test with state
     navigate('/test', { 
       state: { 
         discipline: selectedDiscipline,
-        subject: subject
+        subject: subject,
+        subjectId: subjectData?.id
       } 
     });
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-lg text-muted-foreground">Loading subjects...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -139,6 +231,16 @@ const Subjects = () => {
               Select your discipline to begin your exam preparation journey
             </p>
           </div>
+
+          {/* Show database subjects info */}
+          {subjectsFromDB.length > 0 && (
+            <div className="text-center mb-8">
+              <p className="text-sm text-muted-foreground">
+                <CheckCircle className="inline h-4 w-4 mr-1 text-green-600" />
+                {subjectsFromDB.length} subjects available from database
+              </p>
+            </div>
+          )}
 
           {!selectedDiscipline ? (
             /* Discipline Selection */

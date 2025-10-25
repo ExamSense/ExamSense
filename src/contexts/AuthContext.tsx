@@ -32,16 +32,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fetch and listen to session changes
   useEffect(() => {
     const fetchSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session ?? null);
-      setUser(data.session?.user ?? null);
-      setLoading(false);
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Auth session error:', error);
+          setError(error.message);
+        }
+        setSession(data.session ?? null);
+        setUser(data.session?.user ?? null);
+      } catch (err) {
+        console.error('Failed to fetch session:', err);
+        setError('Failed to initialize authentication');
+      } finally {
+        setLoading(false);
+      }
     };
     fetchSession();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setLoading(false);
     });
 
     return () => {
@@ -55,6 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUp = async (email: string, password: string, fullName?: string) => {
     setLoading(true);
+    // Use Supabase signUp which will trigger email confirmation depending on your Supabase settings
     const { error, data } = await supabase.auth.signUp({
       email,
       password,
@@ -62,25 +74,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         data: { full_name: fullName || "" },
       },
     });
-    
+
+    // If there was an error from Supabase, stop and bubble up
     if (error) {
       setLoading(false);
       throw error;
     }
 
-    // Create user profile in your users table
-    if (data.user) {
-      await supabase.from('users').insert({
-        id: data.user.id,
-        email: data.user.email,
-        full_name: fullName || '',
-        created_at: new Date().toISOString()
-      });
+    // NOTE: We intentionally do NOT set session/user here. This prevents automatic
+    // login immediately after sign up. The user must verify their email first
+    // and then perform a manual login. This makes the flow: sign up -> verify email -> login.
+
+    // Create user profile record optionally. Some teams prefer to create profile on first login,
+    // but we'll create a lightweight profile now so admin dashboard can display pending users.
+    if (data?.user) {
+      try {
+        await supabase.from('users').insert({
+          id: data.user.id,
+          email: data.user.email,
+          full_name: fullName || '',
+          created_at: new Date().toISOString(),
+          verified: false
+        });
+      } catch (profileErr) {
+        // Don't fail the signup flow if profile creation fails — just log it
+        console.warn('Failed to create user profile after signup:', profileErr);
+      }
     }
-    
+
     setLoading(false);
-    setSession(data.session ?? null);
-    setUser(data.user ?? null);
+    // Do not set session or user here; components should prompt user to verify their email and login.
   };
 
   const signIn = async (email: string, password: string) => {
@@ -125,7 +148,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signOut,
   };
 
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
+  // Always render children, even while loading
+  // Individual components can check loading state if needed
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 // ----------------------------

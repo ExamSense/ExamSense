@@ -22,7 +22,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 
 const Landing = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const features = [
@@ -79,10 +79,10 @@ const Landing = () => {
             </div>
 
             {/* Personalized Greeting for Authenticated Users */}
-            {isAuthenticated && (
+            {user && (
               <div className="mb-4 animate-fade-in">
                 <p className="text-2xl md:text-3xl font-semibold text-white/95">
-                  Welcome back, <span className="text-accent">{user?.name.split(' ')[0]}</span>! 👋
+                  Welcome back, <span className="text-accent">{user?.user_metadata?.full_name?.split(' ')[0] || 'there'}</span>! 👋
                 </p>
               </div>
             )}
@@ -98,7 +98,7 @@ const Landing = () => {
 
             {/* Auth-Aware CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              {isAuthenticated ? (
+              {user ? (
                 <>
                   {/* Authenticated User CTAs */}
                   <Button
@@ -300,7 +300,7 @@ const Landing = () => {
               Join thousands of students who have improved their exam scores
               with Exam Sense
             </p>
-            {isAuthenticated ? (
+            {user ? (
               <Button
                 size="lg"
                 onClick={() => navigate('/test')}

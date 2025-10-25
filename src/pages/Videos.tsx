@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const Videos = () => {
   const [selectedSubject, setSelectedSubject] = useState("mathematics");
   const navigate = useNavigate()
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
 
   const videosBySubject = {
     mathematics: [
@@ -157,7 +157,7 @@ const Videos = () => {
               Put what you've learned into practice with our comprehensive CBT
               exams
             </p>
-            {isAuthenticated ? (
+            {user ? (
               <Button
                 size="lg"
                 onClick={() => navigate("/test")}

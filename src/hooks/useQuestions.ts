@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import type { TestConfig } from '@/components/TestConfiguration';
 import {
-  getQuestionsBySubject,
-  getAvailableSubjects,
-  shuffleQuestions,
-  type Question
-} from '@/data/questionBank';
+  getSubjects,
+  getRandomQuestions,
+  getSubjectStatistics
+} from '@/lib/supabaseOperations';
+import type { Question } from '@/data/questionBank';
 
 /**
  * Return type for useQuestions hook
@@ -37,15 +37,31 @@ export function useQuestions(config: TestConfig): UseQuestionsResult {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [availableSubjects] = useState<string[]>(() => getAvailableSubjects());
+  const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
+
+  // Load available subjects from Supabase for consumers of this hook
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const subs = await getSubjects();
+        const names = (subs || []).map((s: any) => s.name?.toString() || s);
+        if (!mounted) return;
+        setAvailableSubjects(names);
+      } catch (err) {
+        console.error('Failed to load subjects in useQuestions:', err);
+      }
+    };
+    void load();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
-    const fetchQuestions = () => {
+    const fetchQuestions = async () => {
       setIsLoading(true);
       setError(null);
 
       try {
-        // Validate subject is provided
         if (!config.subject) {
           setError('Please select a subject to continue.');
           setQuestions([]);
@@ -53,60 +69,68 @@ export function useQuestions(config: TestConfig): UseQuestionsResult {
           return;
         }
 
-        // Check if subject is available in question bank
-        const isSubjectAvailable = availableSubjects.some(
-          s => s.toLowerCase() === config.subject.toLowerCase()
-        );
-
-        if (!isSubjectAvailable) {
-          setError(
-            `Questions for ${config.subject} are not available yet. Try Mathematics or English Language.`
-          );
+        // Find subject id from Supabase subjects
+        const subs = await getSubjects();
+        const match = (subs || []).find((s: any) => (s.name || '').toLowerCase() === config.subject.toLowerCase());
+        if (!match) {
+          setError(`Questions for ${config.subject} are not available yet.`);
           setQuestions([]);
           setIsLoading(false);
           return;
         }
 
-        // Fetch questions for the subject
-        const subjectQuestions = getQuestionsBySubject(config.subject);
-
-        // Check if questions exist for the subject
-        if (subjectQuestions.length === 0) {
-          setError(
-            `Questions for ${config.subject} are not available yet. Try Mathematics or English Language.`
-          );
+        // Fetch random questions from Supabase for the subject id
+        const res = await getRandomQuestions(match.id, config.numberOfQuestions);
+        if (!res || !res.success) {
+          setError(res?.error || 'Failed to fetch questions from server.');
           setQuestions([]);
           setIsLoading(false);
           return;
         }
 
-        // Check if we have enough questions
-        if (subjectQuestions.length < config.numberOfQuestions) {
-          console.warn(
-            `Requested ${config.numberOfQuestions} questions but only ${subjectQuestions.length} available for ${config.subject}`
-          );
-        }
+        // Map Supabase question shape to local Question type
+        const mapped: Question[] = (res.data || []).map((q: any) => {
+          const optionsArray: [string,string,string,string] = [
+            q.options?.a ?? '',
+            q.options?.b ?? '',
+            q.options?.c ?? '',
+            q.options?.d ?? ''
+          ];
 
-        // Shuffle and return requested count
-        const selectedQuestions = shuffleQuestions(
-          subjectQuestions,
-          config.numberOfQuestions
-        );
+          const correct = (() => {
+            const co = q.correctOption;
+            if (typeof co === 'string') {
+              const map: Record<string, number> = { a: 0, b: 1, c: 2, d: 3 };
+              return map[co.toLowerCase()] ?? 0;
+            }
+            if (typeof co === 'number') return co;
+            return 0;
+          })();
 
-        setQuestions(selectedQuestions);
+          return {
+            id: q.id,
+            subject: q.subject?.name || config.subject,
+            topic: q.topic?.name || q.topic?.name || 'General',
+            difficulty: q.difficulty || 'easy',
+            question: q.question,
+            options: optionsArray,
+            correctAnswer: correct as 0|1|2|3,
+            explanation: q.explanation || ''
+          } as Question;
+        });
+
+        setQuestions(mapped);
         setError(null);
-      } catch (err) {
-        console.error('Error fetching questions:', err);
-        setError(
-          `An error occurred while loading questions. Please try again.`
-        );
+      } catch (err: any) {
+        console.error('Error fetching questions from Supabase:', err);
+        setError(`An error occurred while loading questions. ${err?.message || ''}`);
         setQuestions([]);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchQuestions();
+    void fetchQuestions();
   }, [config.subject, config.numberOfQuestions, availableSubjects]);
 
   return {
@@ -122,11 +146,15 @@ export function useQuestions(config: TestConfig): UseQuestionsResult {
  * @param subject - The subject name to check
  * @returns boolean indicating if subject is available
  */
-export function hasQuestionsAvailable(subject: string): boolean {
-  const availableSubjects = getAvailableSubjects();
-  return availableSubjects.some(
-    s => s.toLowerCase() === subject.toLowerCase()
-  );
+export async function hasQuestionsAvailable(subject: string): Promise<boolean> {
+  try {
+    const subs = await getSubjects();
+    const names = (subs || []).map((s: any) => s.name?.toString() || s);
+    return names.some((s: string) => s.toLowerCase() === subject.toLowerCase());
+  } catch (err) {
+    console.error('Error checking subject availability:', err);
+    return false;
+  }
 }
 
 /**
@@ -134,7 +162,12 @@ export function hasQuestionsAvailable(subject: string): boolean {
  * @param subject - The subject name
  * @returns number of questions available for the subject
  */
-export function getQuestionCount(subject: string): number {
-  const questions = getQuestionsBySubject(subject);
-  return questions.length;
+export async function getQuestionCount(subject: string): Promise<number> {
+  try {
+    const stats = await getSubjectStatistics(subject);
+    return stats?.totalQuestions || 0;
+  } catch (err) {
+    console.error('Error getting question count:', err);
+    return 0;
+  }
 }

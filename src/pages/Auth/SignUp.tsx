@@ -123,15 +123,11 @@ export default function Signup() {
 
     try {
       await signUp(formData.email, formData.password, formData.name);
-      
-      // Success! Show toast and redirect
-      // Note: You might want to use a proper toast library
-      alert('Account created successfully!');
-      
-      // Wait 1 second then redirect
-      setTimeout(() => {
-        navigate('/test');
-      }, 1000);
+
+      // Success: instruct the user to check email and login manually
+      // Use a friendly inline banner instead of auto-login
+      alert('Account created. Please check your email for a verification link. After verifying your email, please login.');
+      navigate('/login');
     } catch (err) {
       // Error is handled by auth context
       setShowErrorBanner(true);

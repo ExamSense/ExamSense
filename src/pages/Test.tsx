@@ -8,8 +8,22 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import TestConfiguration, { type TestConfig } from "@/components/TestConfiguration";
-import { getRandomQuestions } from "@/data/questionBank";
-import type { Question } from "@/data/questionBank";
+import { supabase } from "@/supabaseClient";
+import { useAuth } from "@/contexts/AuthContext";
+
+// Question type from database
+interface Question {
+  id: string;
+  question: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_answer: 'a' | 'b' | 'c' | 'd';
+  explanation?: string;
+  difficulty?: string;
+  topic_id: string;
+}
 
 const Test = () => {
   const navigate = useNavigate();
@@ -32,6 +46,8 @@ const Test = () => {
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [testStarted, setTestStarted] = useState(false);
 
+  const { user } = useAuth();
+
   // Load questions when config changes
   useEffect(() => {
     const loadQuestions = async () => {
@@ -47,21 +63,53 @@ const Test = () => {
         return;
       }
       
-      console.log('Loading questions for:', testConfig.subject);
+      console.log('Loading questions from Supabase for:', testConfig.subject);
       setIsLoadingQuestions(true);
       
       try {
-        // Simulate small delay for better UX
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Get subject ID first
+        const { data: subjects } = await supabase
+          .from('subjects')
+          .select('id')
+          .ilike('name', testConfig.subject)
+          .single();
+
+        if (!subjects) {
+          console.error('Subject not found:', testConfig.subject);
+          setIsLoadingQuestions(false);
+          return;
+        }
+
+        // Get topics for this subject
+        const { data: topics } = await supabase
+          .from('topics')
+          .select('id')
+          .eq('subject_id', subjects.id);
+
+        if (!topics || topics.length === 0) {
+          console.error('No topics found for subject:', testConfig.subject);
+          setIsLoadingQuestions(false);
+          return;
+        }
+
+        const topicIds = topics.map(t => t.id);
+
+        // Get random questions from these topics
+        const { data: loadedQuestions, error } = await supabase
+          .from('questions')
+          .select('*')
+          .in('topic_id', topicIds)
+          .limit(testConfig.numberOfQuestions);
+
+        if (error) {
+          console.error('Error loading questions:', error);
+          setIsLoadingQuestions(false);
+          return;
+        }
         
-        const loadedQuestions = getRandomQuestions(
-          testConfig.subject,
-          testConfig.numberOfQuestions
-        );
+        console.log('Loaded questions from DB:', loadedQuestions?.length || 0);
         
-        console.log('Loaded questions:', loadedQuestions.length);
-        
-        if (loadedQuestions.length === 0) {
+        if (!loadedQuestions || loadedQuestions.length === 0) {
           console.error('No questions loaded for subject:', testConfig.subject);
           setIsLoadingQuestions(false);
           return;
@@ -135,28 +183,61 @@ const Test = () => {
     setTestStarted(true);
   };
   
-  const handleSubmit = () => {
-    if (questions.length === 0) return;
+  const handleSubmit = async () => {
+    if (questions.length === 0 || !user || !testConfig) return;
     
     // Calculate score
     let correct = 0;
+    const answerMap: { [key: string]: string } = { 0: 'a', 1: 'b', 2: 'c', 3: 'd' };
+    
     answers.forEach((answer, index) => {
-      if (answer === questions[index].correctAnswer) {
+      if (answer !== null && answerMap[answer] === questions[index].correct_answer) {
         correct++;
       }
     });
     
-    // Calculate topic performance
-    const topicPerformance: Record<string, { correct: number; total: number }> = {};
-    questions.forEach((question, index) => {
-      if (!topicPerformance[question.topic]) {
-        topicPerformance[question.topic] = { correct: 0, total: 0 };
+    const percentage = (correct / questions.length) * 100;
+
+    try {
+      // Get subject ID
+      const { data: subjects } = await supabase
+        .from('subjects')
+        .select('id')
+        .ilike('name', testConfig.subject)
+        .single();
+
+      // Save test result to database
+      const { data: testResult, error: testError } = await supabase
+        .from('test_history')
+        .insert({
+          user_id: user.id,
+          subject_id: subjects?.id || null,
+          total_questions: questions.length,
+          correct_answers: correct,
+          score: correct,
+          percentage: percentage,
+          time_taken: testConfig.duration * 60 - timeRemaining
+        })
+        .select()
+        .single();
+
+      if (testError) {
+        console.error('Error saving test:', testError);
+      } else if (testResult) {
+        // Save individual answers
+        const userAnswers = questions.map((q, index) => ({
+          user_id: user.id,
+          test_id: testResult.id,
+          question_id: q.id,
+          user_answer: answers[index] !== null ? answerMap[answers[index]!] : null,
+          is_correct: answers[index] !== null && answerMap[answers[index]!] === q.correct_answer
+        }));
+
+        await supabase.from('user_answers').insert(userAnswers);
       }
-      topicPerformance[question.topic].total++;
-      if (answers[index] === question.correctAnswer) {
-        topicPerformance[question.topic].correct++;
-      }
-    });
+    } catch (error) {
+      console.error('Error submitting test:', error);
+    }
     
     // Navigate to results
     navigate('/results', { 
@@ -165,7 +246,6 @@ const Test = () => {
         totalQuestions: questions.length,
         answers,
         questions,
-        topicPerformance,
         timeTaken: testConfig ? (testConfig.duration * 60 - timeRemaining) : 0,
         subject: testConfig?.subject || 'Unknown',
         testDate: new Date()
@@ -366,7 +446,12 @@ const Test = () => {
               onValueChange={(value) => handleAnswer(parseInt(value))}
             >
               <div className="space-y-3">
-                {questions[currentQuestion].options.map((option, index) => (
+                {[
+                  questions[currentQuestion].option_a,
+                  questions[currentQuestion].option_b,
+                  questions[currentQuestion].option_c,
+                  questions[currentQuestion].option_d
+                ].map((option, index) => (
                   <div
                     key={index}
                     className={`flex items-center space-x-3 border-2 rounded-lg p-4 cursor-pointer transition-all ${
@@ -378,7 +463,7 @@ const Test = () => {
                   >
                     <RadioGroupItem value={index.toString()} id={`option-${index}`} />
                     <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer text-base">
-                      {option}
+                      {String.fromCharCode(65 + index)}. {option}
                     </Label>
                   </div>
                 ))}

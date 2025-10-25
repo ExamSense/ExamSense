@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Brain, Menu, X, LogOut, User } from 'lucide-react';
+import { Brain, Menu, X, LogOut, User, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -14,7 +14,7 @@ import {
 
 export default function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
   const toggleMenu = () => {
@@ -25,16 +25,20 @@ export default function Navigation() {
     setIsMenuOpen(false);
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-    closeMenu();
-    // Optional: Add toast notification here
-    // toast.success('Logged out successfully');
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/');
+      closeMenu();
+      // Optional: Add toast notification here
+      // toast.success('Logged out successfully');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   // Extract first name from full name
-  const firstName = user?.name.split(' ')[0] || 'User';
+  const firstName = user?.user_metadata?.full_name?.split(' ')[0] || 'User';
 
   return (
     <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
@@ -57,7 +61,7 @@ export default function Navigation() {
               Testimonials
             </Link>
 
-            {isAuthenticated ? (
+            {user ? (
               <>
                 <Link to="/test">
                   <Button variant="default" size="sm">
@@ -80,9 +84,10 @@ export default function Navigation() {
                       <User className="mr-2 h-4 w-4" />
                       Profile
                     </DropdownMenuItem>
-                    {/* <DropdownMenuItem onClick={() => navigate('/results')}>
-                      Results
-                    </DropdownMenuItem> */}
+                    <DropdownMenuItem onClick={() => navigate('/history')}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      History
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleLogout} className="text-red-600">
                       <LogOut className="mr-2 h-4 w-4" />
@@ -146,7 +151,7 @@ export default function Navigation() {
               Testimonials
             </Link>
 
-            {isAuthenticated ? (
+            {user ? (
               <>
                 <Link
                   to="/test"

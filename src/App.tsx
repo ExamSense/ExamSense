@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoutes";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import Navigation from "./components/Navigation";
 import Landing from "./pages/Landing";
 import Login from "./pages/Auth/Login";
@@ -12,6 +13,7 @@ import Subjects from "./pages/Subjects";
 import Test from "./pages/Test";
 import Results from "./pages/Results";
 import Report from "./pages/Report";
+import History from "./pages/History";
 import Videos from "./pages/Videos";
 import Testimonials from "./pages/Testimonials";
 import NotFound from "./pages/NotFound";
@@ -35,11 +37,12 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
 
           <Layout>
             <Routes>
@@ -83,6 +86,14 @@ const App = () => (
                   </ProtectedRoute>
                 } 
               />
+              <Route
+                path="/history"
+                element={
+                  <ProtectedRoute>
+                    <History />
+                  </ProtectedRoute>
+                }
+              />
               
               {/* Catch-all */}
               <Route path="*" element={<NotFound />} />
@@ -92,6 +103,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

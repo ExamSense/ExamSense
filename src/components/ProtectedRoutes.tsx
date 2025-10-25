@@ -7,10 +7,10 @@ interface Props {
 }
 
 export function ProtectedRoute({ children }: Props) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, loading } = useAuth();
   
   // Show loading spinner while checking auth
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-blue-50 flex items-center justify-center">
         <div className="text-center">
@@ -38,7 +38,7 @@ export function ProtectedRoute({ children }: Props) {
   }
   
   // Redirect to login if not authenticated
-  if (!isAuthenticated) {
+  if (!user) {
     console.log("not auth")
     return <Navigate to="/login" replace />;
   }

@@ -19,7 +19,7 @@ import {
   PlayCircle,
   AlertCircle
 } from 'lucide-react';
-import { getAvailableSubjects, getSubjectStatistics } from '@/data/questionBank';
+import { getSubjects, getSubjectStatistics } from '@/lib/supabaseOperations';
 
 /**
  * Test Configuration Interface
@@ -48,11 +48,37 @@ export default function TestConfiguration({
   const [numberOfQuestions, setNumberOfQuestions] = useState<string>('20');
   const [duration, setDuration] = useState<string>('30');
   const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
+  const [subjectCounts, setSubjectCounts] = useState<Record<string, number>>({});
 
-  // Get available subjects from question bank
+  // Get available subjects from Supabase
   useEffect(() => {
-    const subjects = getAvailableSubjects();
-    setAvailableSubjects(subjects);
+    let mounted = true;
+
+    const loadSubjects = async () => {
+      try {
+        const subs = await getSubjects();
+        const names = (subs || []).map((s: any) => s.name?.toString() || s);
+        if (!mounted) return;
+        setAvailableSubjects(names);
+
+        // Pre-fetch counts for each subject to show in the UI
+        const statsPromises = names.map(async (name: string) => {
+          const stats = await getSubjectStatistics(name);
+          return { name, count: stats?.totalQuestions || 0 };
+        });
+
+        const results = await Promise.all(statsPromises);
+        if (!mounted) return;
+        const map: Record<string, number> = {};
+        results.forEach(r => { map[r.name] = r.count; });
+        setSubjectCounts(map);
+      } catch (err) {
+        console.error('Failed to load subjects from Supabase', err);
+      }
+    };
+
+    void loadSubjects();
+    return () => { mounted = false; };
   }, []);
 
   // Set initial values when props change
@@ -102,16 +128,14 @@ export default function TestConfiguration({
     }
   }, [discipline, initialDiscipline]);
 
-  // Check if subject is available in question bank
+  // Check if subject is available in Supabase
   const isSubjectAvailable = (subjectName: string): boolean => {
     return availableSubjects.includes(subjectName);
   };
 
-  // Get question count for available subjects
+  // Get question count for available subjects (from cached counts)
   const getQuestionCount = (subjectName: string): number => {
-    if (!isSubjectAvailable(subjectName)) return 0;
-    const stats = getSubjectStatistics(subjectName);
-    return stats.totalQuestions;
+    return subjectCounts[subjectName] || 0;
   };
 
   // Check if form is valid

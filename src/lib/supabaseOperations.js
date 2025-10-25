@@ -1659,6 +1659,82 @@ export const calculateTestScore = (questions, answers) => {
 }
 
 // =============================================
+// Subject statistics helper (Supabase-backed)
+// Returns totalQuestions, difficultyDistribution, topicDistribution and topics list
+export const getSubjectStatistics = async (subjectName) => {
+  try {
+    // Find subject id by name (case-insensitive)
+    const { data: subjectRow, error: subjectError } = await supabase
+      .from('subjects')
+      .select('*')
+      .ilike('name', subjectName)
+      .limit(1)
+      .single();
+
+    if (subjectError || !subjectRow) {
+      return {
+        totalQuestions: 0,
+        difficultyDistribution: { easy: 0, medium: 0, hard: 0 },
+        topicDistribution: {},
+        topics: []
+      };
+    }
+
+    const subjectId = subjectRow.id;
+
+    // Total questions count (via related topics)
+    const { count: totalCount } = await supabase
+      .from('questions')
+      .select('id', { count: 'exact', head: true })
+      .eq('topics.subject_id', subjectId);
+
+    // Counts by difficulty
+    const difficultyDistribution = { easy: 0, medium: 0, hard: 0 };
+    for (const level of ['easy', 'medium', 'hard']) {
+      const { count } = await supabase
+        .from('questions')
+        .select('id', { count: 'exact', head: true })
+        .eq('difficulty_level', level)
+        .eq('topics.subject_id', subjectId);
+      difficultyDistribution[level] = count || 0;
+    }
+
+    // Topics and per-topic counts
+    const { data: topicsData } = await supabase
+      .from('topics')
+      .select('id, name')
+      .eq('subject_id', subjectId)
+      .order('name');
+
+    const topicDistribution = {};
+    if (Array.isArray(topicsData)) {
+      for (const t of topicsData) {
+        const { count } = await supabase
+          .from('questions')
+          .select('id', { count: 'exact', head: true })
+          .eq('topic_id', t.id);
+        topicDistribution[t.name] = count || 0;
+      }
+    }
+
+    return {
+      totalQuestions: totalCount || 0,
+      difficultyDistribution,
+      topicDistribution,
+      topics: topicsData || []
+    };
+  } catch (error) {
+    console.error('getSubjectStatistics error:', error);
+    return {
+      totalQuestions: 0,
+      difficultyDistribution: { easy: 0, medium: 0, hard: 0 },
+      topicDistribution: {},
+      topics: []
+    };
+  }
+};
+
+// =============================================
 // REAL-TIME SUBSCRIPTIONS (OPTIONAL)
 // =============================================
 

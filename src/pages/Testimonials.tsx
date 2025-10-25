@@ -5,7 +5,7 @@ import { Brain, Star, Quote, PlayCircle,TrendingUp } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 const Testimonials = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const testimonials = [
     {
@@ -153,7 +153,7 @@ const Testimonials = () => {
               Start your journey to exam success today with personalized
               AI-powered learning
             </p>
-            {isAuthenticated ? (
+            {user ? (
               <Button
                 size="lg"
                 onClick={() => navigate('/test')}

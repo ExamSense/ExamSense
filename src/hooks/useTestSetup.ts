@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getAvailableSubjects, getSubjectStatistics } from '@/data/questionBank';
+import { getSubjects, getSubjectStatistics } from '@/lib/supabaseOperations.js';
 import { TestConfig } from '@/components/TestConfiguration';
 
 /**
@@ -34,7 +34,7 @@ export function useTestSetup(): TestSetupResult {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const setupTest = () => {
+    const setupTest = async () => {
       setIsLoading(true);
       setError(null);
 
@@ -52,58 +52,65 @@ export function useTestSetup(): TestSetupResult {
 
       const { discipline, subject } = state;
 
-      // Case 2: Validate subject is available in question bank
-      const availableSubjects = getAvailableSubjects();
-      const isSubjectAvailable = availableSubjects.some(
-        s => s.toLowerCase() === subject.toLowerCase()
-      );
+      try {
+        // Fetch available subjects from Supabase
+        const subjects = await getSubjects();
+        const availableSubjects = (subjects || []).map((s: any) => s.name.toString());
 
-      if (!isSubjectAvailable) {
-        console.warn(`Subject "${subject}" is not available in question bank`);
-        setError(`Sorry, ${subject} questions are not available yet. Please select another subject.`);
+        const isSubjectAvailable = availableSubjects.some(
+          (s: string) => s.toLowerCase() === subject.toLowerCase()
+        );
+
+        if (!isSubjectAvailable) {
+          console.warn(`Subject "${subject}" is not available in Supabase`);
+          setError(`Sorry, ${subject} questions are not available yet. Please select another subject.`);
+          setShowConfiguration(true);
+          setInitialConfig(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Get stats from Supabase (async)
+        const stats = await getSubjectStatistics(subject);
+
+        if (!stats || stats.totalQuestions === 0) {
+          console.warn(`Subject "${subject}" has no questions in Supabase`);
+          setError(`${subject} has no questions available yet. Please select another subject.`);
+          setShowConfiguration(true);
+          setInitialConfig(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Determine default question count
+        const defaultQuestions = stats.totalQuestions >= 100 ? 100 : 
+                                 stats.totalQuestions >= 50 ? 50 : 
+                                 stats.totalQuestions >= 20 ? 20 : 
+                                 stats.totalQuestions;
+
+        const config: TestConfig = {
+          discipline,
+          subject,
+          numberOfQuestions: defaultQuestions,
+          duration: 60 // Default to 60 minutes
+        };
+
+        setInitialConfig(config);
+        setShowConfiguration(false);
+        setIsLoading(false);
+
+        console.log('Test configuration ready:', config);
+      } catch (err) {
+        console.error('Error setting up test from Supabase:', err);
+        setError('Failed to prepare test configuration. Please try again.');
         setShowConfiguration(true);
         setInitialConfig(null);
         setIsLoading(false);
-        return;
       }
-
-      // Case 3: Valid subject - check if it has enough questions
-      const stats = getSubjectStatistics(subject);
-      
-      if (stats.totalQuestions === 0) {
-        console.warn(`Subject "${subject}" has no questions`);
-        setError(`${subject} has no questions available yet. Please select another subject.`);
-        setShowConfiguration(true);
-        setInitialConfig(null);
-        setIsLoading(false);
-        return;
-      }
-
-      // Case 4: All valid - create default configuration
-      console.log(`Valid subject "${subject}" selected from Subjects page`);
-      
-      // Determine default test settings based on available questions
-      const defaultQuestions = stats.totalQuestions >= 100 ? 100 : 
-                               stats.totalQuestions >= 50 ? 50 : 
-                               stats.totalQuestions >= 20 ? 20 : 
-                               stats.totalQuestions;
-
-      const config: TestConfig = {
-        discipline,
-        subject,
-        numberOfQuestions: defaultQuestions,
-        duration: 60 // Default to 60 minutes
-      };
-
-      setInitialConfig(config);
-      setShowConfiguration(false);
-      setIsLoading(false);
-
-      console.log('Test configuration ready:', config);
     };
 
     // Small delay to prevent flash of loading state
-    const timer = setTimeout(setupTest, 100);
+    const timer = setTimeout(() => { void setupTest(); }, 100);
 
     return () => clearTimeout(timer);
   }, [location.state]);
@@ -127,10 +134,10 @@ export function isValidDiscipline(discipline: string): boolean {
 /**
  * Helper function to get question count for a subject
  */
-export function getAvailableQuestionCount(subject: string): number {
+export async function getAvailableQuestionCount(subject: string): Promise<number> {
   try {
-    const stats = getSubjectStatistics(subject);
-    return stats.totalQuestions;
+    const stats = await getSubjectStatistics(subject);
+    return stats?.totalQuestions || 0;
   } catch (error) {
     console.error(`Error getting question count for ${subject}:`, error);
     return 0;
@@ -140,9 +147,13 @@ export function getAvailableQuestionCount(subject: string): number {
 /**
  * Helper function to validate if subject is available
  */
-export function isSubjectAvailable(subject: string): boolean {
-  const availableSubjects = getAvailableSubjects();
-  return availableSubjects.some(
-    s => s.toLowerCase() === subject.toLowerCase()
-  );
+export async function isSubjectAvailable(subject: string): Promise<boolean> {
+  try {
+    const subjects = await getSubjects();
+    const availableSubjects = (subjects || []).map((s: any) => s.name?.toString() || s);
+    return availableSubjects.some((s: string) => s.toLowerCase() === subject.toLowerCase());
+  } catch (error) {
+    console.error('Error checking subject availability:', error);
+    return false;
+  }
 }
