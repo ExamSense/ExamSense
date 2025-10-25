@@ -221,34 +221,57 @@ export const updateTestScore = async (testId, score) => {
 
 // Record user answer
 export const recordAnswer = async (testId, questionId, selectedOption, isCorrect) => {
+  // Ensure the current user is attached (RLS requires auth.uid() = user_id)
+  const user = await getCurrentUser()
+  if (!user) throw new Error('User not authenticated')
+
+  const payload = {
+    user_id: user.id,
+    test_id: testId,
+    question_id: questionId,
+    user_answer: selectedOption,
+    is_correct: isCorrect,
+    time_spent: null
+  }
+
   const { data, error } = await supabase
     .from('user_answers')
-    .insert({
-      test_id: testId,
-      question_id: questionId,
-      selected_option: selectedOption,
-      is_correct: isCorrect
-    })
+    .insert(payload)
     .select()
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 // Record topic performance
 export const recordTopicPerformance = async (testId, topicId, correct, total) => {
+  // Use canonical column names in the DB schema: user_id, subject_id, topic_id, total_score, total_questions
+  // We need the test to find user_id and subject_id
+  const { data: testRow, error: testErr } = await supabase
+    .from('test_history')
+    .select('id, user_id, subject_id')
+    .eq('id', testId)
+    .single()
+
+  if (testErr) throw testErr
+
+  const payload = {
+    user_id: testRow.user_id,
+    subject_id: testRow.subject_id,
+    topic_id: topicId,
+    attempts: 1,
+    total_score: correct,
+    total_questions: total,
+    last_attempt: new Date().toISOString()
+  }
+
   const { data, error } = await supabase
     .from('topic_performance')
-    .insert({
-      test_id: testId,
-      topic_id: topicId,
-      correct,
-      total
-    })
+    .insert(payload)
     .select()
     .single()
-  
+
   if (error) throw error
   return data
 }
@@ -285,14 +308,15 @@ export const saveTestResult = async (userId, subjectId, results, options = {}) =
     console.log(`Calculated score: ${score}/${totalQuestions} (${percentage.toFixed(2)}%)`)
 
     // Step 2: Create test history record
+    // Map to canonical DB columns: user_id, subject_id, score, total_questions, time_spent, test_type, date_taken
     const testHistoryData = {
       user_id: userId,
       subject_id: subjectId,
       score: score,
       total_questions: totalQuestions,
-      duration_minutes: options.durationMinutes || null,
-      status: 'completed',
-      completed_at: new Date().toISOString()
+      time_spent: options.durationMinutes || null,
+      test_type: options.testType || 'practice',
+      date_taken: new Date().toISOString()
     }
 
     const { data: testRecord, error: testError } = await supabase
@@ -335,10 +359,13 @@ export const saveTestResult = async (userId, subjectId, results, options = {}) =
     
     for (const [topicId, performance] of topicPerformance) {
       const topicRecord = {
-        test_id: testRecord.id,
+        user_id: userId,
+        subject_id: subjectId,
         topic_id: topicId,
-        correct: performance.correct,
-        total: performance.total
+        attempts: 1,
+        total_score: performance.correct,
+        total_questions: performance.total,
+        last_attempt: new Date().toISOString()
       }
 
       const { data: topicData, error: topicError } = await supabase
@@ -363,11 +390,13 @@ export const saveTestResult = async (userId, subjectId, results, options = {}) =
     const userAnswersData = results
       .filter(result => result.questionId) // Only save if we have question ID
       .map(result => ({
+        user_id: userId,
         test_id: testRecord.id,
         question_id: result.questionId,
-        selected_option: result.selectedAnswer,
+        user_answer: result.selectedAnswer,
+        correct_answer: result.correctAnswer || null,
         is_correct: result.isCorrect,
-        time_spent_seconds: result.timeSpent || 0
+        time_spent: result.timeSpent || 0
       }))
 
     if (userAnswersData.length > 0) {
@@ -468,7 +497,7 @@ export const getUserTestHistory = async () => {
       subjects(name)
     `)
     .eq('user_id', user.id)
-    .order('taken_at', { ascending: false })
+    .order('date_taken', { ascending: false })
   
   if (error) throw error
   return data
@@ -553,7 +582,7 @@ export const getUserHistory = async (userId, options = {}) => {
         percentage,
         duration_minutes,
         status,
-        taken_at,
+        date_taken,
         completed_at,
         subjects!inner(
           id,
@@ -574,7 +603,7 @@ export const getUserHistory = async (userId, options = {}) => {
         )` : ''}
       `)
       .eq('user_id', userId)
-      .order('taken_at', { ascending: false })
+      .order('date_taken', { ascending: false })
 
     // Apply filters
     if (subjectId) {
@@ -582,11 +611,11 @@ export const getUserHistory = async (userId, options = {}) => {
     }
 
     if (startDate) {
-      query = query.gte('taken_at', startDate)
+      query = query.gte('date_taken', startDate)
     }
 
     if (endDate) {
-      query = query.lte('taken_at', endDate)
+      query = query.lte('date_taken', endDate)
     }
 
     if (minScore !== null) {
@@ -608,9 +637,25 @@ export const getUserHistory = async (userId, options = {}) => {
 
     const { data, error } = await query
 
-    if (error) throw error
+    // Try the complex query first; if it errors (join/permission issues), fall back to a simpler query
+    let finalData = data
+    let finalError = error
 
-    if (!data || data.length === 0) {
+    if (error) {
+      console.warn('Complex user history query failed, attempting simple fallback:', error)
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('test_history')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date_taken', { ascending: false })
+
+      if (fallbackError) throw fallbackError
+      finalData = fallbackData
+      finalError = null
+    }
+
+    if (finalError) throw finalError
+    if (!finalData || finalData.length === 0) {
       return {
         success: true,
         data: [],
@@ -620,15 +665,15 @@ export const getUserHistory = async (userId, options = {}) => {
     }
 
     // Format the data for easier consumption
-    const formattedHistory = data.map(test => ({
+    const formattedHistory = (finalData || []).map(test => ({
       testId: test.id,
       subject: {
-        id: test.subjects.id,
-        name: test.subjects.name,
-        description: test.subjects.description
+        id: test.subjects?.id || test.subject_id || null,
+        name: test.subjects?.name || test.subject_name || null,
+        description: test.subjects?.description || null
       },
       score: test.score,
-      totalQuestions: test.total_questions,
+      totalQuestions: test.total_questions || test.totalQuestions || test.total,
       percentage: test.percentage,
       accuracy: Math.round(test.percentage * 100) / 100,
       duration: {
@@ -637,9 +682,9 @@ export const getUserHistory = async (userId, options = {}) => {
       },
       status: test.status,
       dates: {
-        taken: test.taken_at,
+        taken: test.date_taken || test.taken_at,
         completed: test.completed_at,
-        takenFormatted: formatDate(test.taken_at),
+        takenFormatted: formatDate(test.date_taken || test.taken_at),
         completedFormatted: test.completed_at ? formatDate(test.completed_at) : null
       },
       performance: {
@@ -1034,7 +1079,7 @@ export const getTopicPerformance = async (testId) => {
           score,
           total_questions,
           percentage,
-          taken_at
+          date_taken
         )
       `)
       .eq('test_id', testId)
@@ -1078,7 +1123,7 @@ export const getTopicPerformance = async (testId) => {
           overallScore: item.test_history.score,
           overallTotal: item.test_history.total_questions,
           overallPercentage: item.test_history.percentage,
-          takenAt: item.test_history.taken_at
+          takenAt: item.test_history.date_taken || item.test_history.taken_at
         }
       }
     })

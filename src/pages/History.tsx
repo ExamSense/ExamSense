@@ -31,14 +31,46 @@ export default function History() {
         console.debug('AuthContext user:', user);
 
         if (res && res.success) {
-          setHistory(res.data || []);
+          // Normalize history items so the UI can handle both old and new response shapes
+            const normalize = (item: any) => {
+            // New formatted shape from getUserHistory: { testId, subject: { name }, score, totalQuestions, percentage, dates: { taken } }
+            // Older/raw rows may have: { id, subjects, score, total_questions, percentage, date_taken or taken_at }
+            const id = item.testId || item.id || item.test_id || item.testId;
+            const subjectName = item.subject?.name || item.subjectName || item.subjects?.name || item.subject_name || item.subject || 'Subject';
+            const taken = item.dates?.taken || item.date_taken || item.taken_at || item.taken || item.date || item.completed_at || null;
+            const score = item.score ?? item.correct ?? null;
+            const total = item.totalQuestions ?? item.total_questions ?? item.total ?? null;
+            const percentage = (item.percentage ?? (score != null && total ? (score / total) * 100 : null));
+
+            return {
+              id,
+              subjectName,
+              taken,
+              score,
+              total,
+              percentage
+            };
+          };
+
+          const data = (res.data || []).map(normalize);
+          setHistory(data);
         } else if (res && !res.success) {
-          // Show message coming from the helper if available
-          const msg = res.message || res.error || 'Failed to load history';
+          // Show message coming from the helper including any underlying error
+          const msg = [res.message, res.error].filter(Boolean).join(' - ') || 'Failed to load history';
           setError(msg);
         } else {
-          // older helper returns array directly
-          setHistory(res || []);
+          // older helper returns array directly (raw rows)
+          const normalize = (item: any) => {
+            const id = item.id || item.testId || item.test_id;
+            const subjectName = item.subjects?.name || item.subject_name || item.subject || 'Subject';
+            const taken = item.date_taken || item.taken_at || item.taken || item.date || null;
+            const score = item.score ?? null;
+            const total = item.total_questions ?? item.totalQuestions ?? item.total ?? null;
+            const percentage = item.percentage ?? (score != null && total ? (score / total) * 100 : null);
+            return { id, subjectName, taken, score, total, percentage };
+          };
+
+          setHistory((res || []).map(normalize));
         }
       } catch (err: any) {
         console.error('Error loading history:', err);
@@ -79,16 +111,16 @@ export default function History() {
         )}
 
         <div className="space-y-4">
-          {history.map((test: any) => (
-            <Card key={test.id} className="p-4">
+          {history.map((test: any, idx: number) => (
+            <Card key={test.id || idx} className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-lg font-semibold">{test.subjects?.name || test.subject_name || 'Subject'}</div>
-                  <div className="text-sm text-muted-foreground">Taken: {new Date(test.taken_at || test.taken || test.date || test.taken_at).toLocaleString()}</div>
+                  <div className="text-lg font-semibold">{test.subjectName || 'Subject'}</div>
+                  <div className="text-sm text-muted-foreground">Taken: {test.taken ? new Date(test.taken).toLocaleString() : 'N/A'}</div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-xl">{test.percentage ?? Math.round((test.score/test.total_questions)*100) ?? 'N/A'}%</div>
-                  <div className="text-sm text-muted-foreground">{test.score}/{test.total_questions || test.total}</div>
+                  <div className="font-bold text-xl">{typeof test.percentage === 'number' ? Math.round(test.percentage) : (test.percentage ?? 'N/A')}%</div>
+                  <div className="text-sm text-muted-foreground">{test.score ?? '0'}/{test.total ?? '-'}</div>
                 </div>
               </div>
             </Card>

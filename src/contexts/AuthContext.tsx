@@ -89,12 +89,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // but we'll create a lightweight profile now so admin dashboard can display pending users.
     if (data?.user) {
       try {
+        // Create a lightweight user profile that matches the DB schema.
+        // Do NOT include fields that don't exist in the `users` table (e.g., `verified`).
         await supabase.from('users').insert({
           id: data.user.id,
           email: data.user.email,
           full_name: fullName || '',
-          created_at: new Date().toISOString(),
-          verified: false
+          created_at: new Date().toISOString()
         });
       } catch (profileErr) {
         // Don't fail the signup flow if profile creation fails — just log it
