@@ -123,6 +123,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw authError;
     }
 
+    // Ensure user profile exists in users table
+    if (data?.user) {
+      try {
+        // Check if user profile exists
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', data.user.id)
+          .single();
+
+        // If no profile exists, create one
+        if (!existingUser) {
+          console.log('Creating missing user profile for:', data.user.email);
+          await supabase.from('users').insert({
+            id: data.user.id,
+            email: data.user.email,
+            full_name: data.user.user_metadata?.full_name || '',
+            created_at: new Date().toISOString()
+          });
+          console.log('✅ User profile created successfully');
+        }
+      } catch (profileErr) {
+        console.warn('Failed to check/create user profile:', profileErr);
+      }
+    }
+
     setSession(data.session ?? null);
     setUser(data.user ?? null);
   };

@@ -17,6 +17,7 @@ import History from "./pages/History";
 import Videos from "./pages/Videos";
 import Testimonials from "./pages/Testimonials";
 import NotFound from "./pages/NotFound";
+import DebugDatabase from "./pages/DebugDatabase";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +53,7 @@ const App = () => (
               <Route path="/signup" element={<Signup />} />
               <Route path="/testimonials" element={<Testimonials />} />
               <Route path="/videos" element={<Videos />} />
+              <Route path="/debug-database" element={<DebugDatabase />} />
               
               {/* Protected Routes */}
               <Route 

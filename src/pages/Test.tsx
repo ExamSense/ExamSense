@@ -184,7 +184,15 @@ const Test = () => {
   };
   
   const handleSubmit = async () => {
-    if (questions.length === 0 || !user || !testConfig) return;
+    if (questions.length === 0 || !user || !testConfig) {
+      console.error('Missing required data:', { 
+        hasQuestions: questions.length > 0, 
+        hasUser: !!user,
+        userId: user?.id,
+        hasConfig: !!testConfig 
+      });
+      return;
+    }
     
     // Calculate score
     let correct = 0;
@@ -197,46 +205,92 @@ const Test = () => {
     });
     
     const percentage = (correct / questions.length) * 100;
+    console.log('Test submission:', { 
+      correct, 
+      total: questions.length, 
+      percentage,
+      subject: testConfig.subject,
+      userId: user.id
+    });
 
     try {
       // Get subject ID
-      const { data: subjects } = await supabase
+      console.log('Searching for subject:', testConfig.subject);
+      const { data: subjects, error: subjectError } = await supabase
         .from('subjects')
         .select('id')
         .ilike('name', testConfig.subject)
         .single();
 
+      if (subjectError) {
+        console.error('Subject query error:', subjectError);
+        throw new Error(`Subject lookup failed: ${subjectError.message}`);
+      }
+
+      if (!subjects?.id) {
+        console.error('Subject not found:', testConfig.subject);
+        // List all available subjects for debugging
+        const { data: allSubjects } = await supabase.from('subjects').select('name');
+        console.error('Available subjects:', allSubjects);
+        throw new Error(`Subject "${testConfig.subject}" not found in database`);
+      }
+
+      console.log('Found subject:', subjects);
+
       // Save test result to database
+      const testData = {
+        user_id: user.id,
+        subject_id: subjects.id,
+        total_questions: questions.length,
+        score: correct,
+        time_spent: testConfig.duration * 60 - timeRemaining,
+        test_type: 'practice'
+      };
+      console.log('Inserting test history:', testData);
+
       const { data: testResult, error: testError } = await supabase
         .from('test_history')
-        .insert({
-          user_id: user.id,
-          subject_id: subjects?.id || null,
-          total_questions: questions.length,
-          correct_answers: correct,
-          score: correct,
-          percentage: percentage,
-          time_taken: testConfig.duration * 60 - timeRemaining
-        })
+        .insert(testData)
         .select()
         .single();
 
       if (testError) {
-        console.error('Error saving test:', testError);
-      } else if (testResult) {
+        console.error('Test history insert error:', testError);
+        console.error('Error details:', { code: testError.code, message: testError.message, details: testError.details });
+        throw testError;
+      }
+      
+      if (testResult) {
+        console.log('✅ Test saved successfully:', testResult);
+        
         // Save individual answers
         const userAnswers = questions.map((q, index) => ({
           user_id: user.id,
           test_id: testResult.id,
           question_id: q.id,
           user_answer: answers[index] !== null ? answerMap[answers[index]!] : null,
+          correct_answer: q.correct_answer,
           is_correct: answers[index] !== null && answerMap[answers[index]!] === q.correct_answer
         }));
 
-        await supabase.from('user_answers').insert(userAnswers);
+        console.log(`Saving ${userAnswers.length} user answers...`);
+        const { error: answersError } = await supabase
+          .from('user_answers')
+          .insert(userAnswers);
+
+        if (answersError) {
+          console.error('❌ Error saving answers:', answersError);
+          console.error('Error details:', { code: answersError.code, message: answersError.message });
+          // Don't block navigation if answers fail - main test is saved
+        } else {
+          console.log('✅ User answers saved successfully');
+        }
       }
-    } catch (error) {
-      console.error('Error submitting test:', error);
+    } catch (error: any) {
+      console.error('❌ Error submitting test:', error);
+      console.error('Full error object:', error);
+      alert(`Failed to save test results: ${error.message || 'Unknown error'}. Check console for details.`);
+      return;
     }
     
     // Navigate to results

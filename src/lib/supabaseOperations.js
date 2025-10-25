@@ -577,30 +577,18 @@ export const getUserHistory = async (userId, options = {}) => {
       .select(`
         id,
         subject_id,
+        topic_id,
         score,
         total_questions,
         percentage,
-        duration_minutes,
-        status,
+        time_spent,
+        test_type,
         date_taken,
-        completed_at,
-        subjects!inner(
+        subjects(
           id,
           name,
           description
         )
-        ${includeTopicPerformance ? `,
-        topic_performance(
-          id,
-          topic_id,
-          correct,
-          total,
-          percentage,
-          topics(
-            id,
-            name
-          )
-        )` : ''}
       `)
       .eq('user_id', userId)
       .order('date_taken', { ascending: false })
