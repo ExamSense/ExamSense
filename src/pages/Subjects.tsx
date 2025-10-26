@@ -164,6 +164,7 @@ const Subjects = () => {
     const subject = subjectsFromDB.find(
       s => s.name.toLowerCase() === subjectName.toLowerCase()
     );
+    console.log('Question count for', subjectName, ':', subject?.question_count);
     return subject?.question_count || 0;
   };
 
@@ -237,7 +238,7 @@ const Subjects = () => {
             <div className="text-center mb-8">
               <p className="text-sm text-muted-foreground">
                 <CheckCircle className="inline h-4 w-4 mr-1 text-green-600" />
-                {subjectsFromDB.length} subjects available from database
+                {subjectsFromDB.length} subject{subjectsFromDB.length > 1 ? 's' : ''} available 
               </p>
             </div>
           )}
@@ -262,7 +263,7 @@ const Subjects = () => {
                     {discipline.name}
                   </h3>
                   <p className="text-muted-foreground text-center mb-4">
-                    {discipline.subjects.length} subjects available
+                    {discipline.subjects.length} subjects 
                   </p>
                   <Button className="w-full" size="lg">
                     Select Discipline

@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { useState, useEffect } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   FlaskConical,
   Palette,
@@ -17,9 +17,9 @@ import {
   Clock,
   ListChecks,
   PlayCircle,
-  AlertCircle
-} from 'lucide-react';
-import { getSubjects, getSubjectStatistics } from '@/lib/supabaseOperations';
+  AlertCircle,
+} from "lucide-react";
+import { getSubjects, getSubjectStatistics } from "@/lib/supabaseOperations";
 
 /**
  * Test Configuration Interface
@@ -38,17 +38,19 @@ interface TestConfigurationProps {
   initialSubject?: string;
 }
 
-export default function TestConfiguration({ 
-  onStartTest, 
-  initialDiscipline = '', 
-  initialSubject = '' 
+export default function TestConfiguration({
+  onStartTest,
+  initialDiscipline = "",
+  initialSubject = "",
 }: TestConfigurationProps) {
   const [discipline, setDiscipline] = useState<string>(initialDiscipline);
   const [subject, setSubject] = useState<string>(initialSubject);
-  const [numberOfQuestions, setNumberOfQuestions] = useState<string>('20');
-  const [duration, setDuration] = useState<string>('30');
+  const [numberOfQuestions, setNumberOfQuestions] = useState<string>("20");
+  const [duration, setDuration] = useState<string>("30");
   const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
-  const [subjectCounts, setSubjectCounts] = useState<Record<string, number>>({});
+  const [subjectCounts, setSubjectCounts] = useState<Record<string, number>>(
+    {}
+  );
 
   // Get available subjects from Supabase
   useEffect(() => {
@@ -66,19 +68,24 @@ export default function TestConfiguration({
           const stats = await getSubjectStatistics(name);
           return { name, count: stats?.totalQuestions || 0 };
         });
-
+        console.log(statsPromises);
         const results = await Promise.all(statsPromises);
         if (!mounted) return;
         const map: Record<string, number> = {};
-        results.forEach(r => { map[r.name] = r.count; });
+        results.forEach((r) => {
+          map[r.name] = r.count;
+        });
         setSubjectCounts(map);
+        console.log("Loaded subject counts:", map);
       } catch (err) {
-        console.error('Failed to load subjects from Supabase', err);
+        console.error("Failed to load subjects from Supabase", err);
       }
     };
 
     void loadSubjects();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Set initial values when props change
@@ -94,37 +101,55 @@ export default function TestConfiguration({
   // Discipline configuration
   const disciplines = [
     {
-      id: 'science',
-      name: 'Science',
+      id: "science",
+      name: "Science",
       icon: FlaskConical,
-      color: 'text-blue-600',
-      subjects: ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'English Language']
+      color: "text-blue-600",
+      subjects: [
+        "Mathematics",
+        "Physics",
+        "Chemistry",
+        "Biology",
+        "English Language",
+      ],
     },
     {
-      id: 'arts',
-      name: 'Arts',
+      id: "arts",
+      name: "Arts",
       icon: Palette,
-      color: 'text-purple-600',
-      subjects: ['English Language', 'Literature', 'Government', 'History', 'CRS/IRS']
+      color: "text-purple-600",
+      subjects: [
+        "English Language",
+        "Literature",
+        "Government",
+        "History",
+        "CRS/IRS",
+      ],
     },
     {
-      id: 'commercial',
-      name: 'Commercial',
+      id: "commercial",
+      name: "Commercial",
       icon: DollarSign,
-      color: 'text-green-600',
-      subjects: ['Mathematics', 'Economics', 'Commerce', 'Accounting', 'English Language']
-    }
+      color: "text-green-600",
+      subjects: [
+        "Mathematics",
+        "Economics",
+        "Commerce",
+        "Accounting",
+        "English Language",
+      ],
+    },
   ];
 
   // Get subjects for selected discipline
-  const selectedDisciplineData = disciplines.find(d => d.id === discipline);
+  const selectedDisciplineData = disciplines.find((d) => d.id === discipline);
   const disciplineSubjects = selectedDisciplineData?.subjects || [];
 
   // Reset subject when discipline changes (only if not from initial props)
   useEffect(() => {
     // Don't reset if we're setting initial values
     if (discipline && discipline !== initialDiscipline) {
-      setSubject('');
+      setSubject("");
     }
   }, [discipline, initialDiscipline]);
 
@@ -157,7 +182,7 @@ export default function TestConfiguration({
       discipline,
       subject,
       numberOfQuestions: parseInt(numberOfQuestions),
-      duration: parseInt(duration)
+      duration: parseInt(duration),
     };
 
     onStartTest(config);
@@ -183,14 +208,18 @@ export default function TestConfiguration({
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-blue-800">
-            You can also select subjects directly from the <strong>Subjects</strong> page for a guided experience.
+            You can also select subjects directly from the{" "}
+            <strong>Subjects</strong> page for a guided experience.
           </p>
         </div>
 
         <div className="space-y-6">
           {/* Discipline Selection */}
           <div className="space-y-2">
-            <Label htmlFor="discipline" className="text-base font-semibold flex items-center gap-2">
+            <Label
+              htmlFor="discipline"
+              className="text-base font-semibold flex items-center gap-2"
+            >
               <FlaskConical className="w-4 h-4" />
               Discipline
             </Label>
@@ -216,36 +245,39 @@ export default function TestConfiguration({
 
           {/* Subject Selection */}
           <div className="space-y-2">
-            <Label htmlFor="subject" className="text-base font-semibold flex items-center gap-2">
+            <Label
+              htmlFor="subject"
+              className="text-base font-semibold flex items-center gap-2"
+            >
               <BookOpen className="w-4 h-4" />
               Subject
             </Label>
-            <Select 
-              value={subject} 
+            <Select
+              value={subject}
               onValueChange={setSubject}
               disabled={!discipline}
             >
               <SelectTrigger id="subject" className="h-12">
-                <SelectValue placeholder={discipline ? "Select a subject" : "Select discipline first"} />
+                <SelectValue
+                  placeholder={
+                    discipline ? "Select a subject" : "Select discipline first"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {disciplineSubjects.map((subj) => {
                   const available = isSubjectAvailable(subj);
                   const questionCount = getQuestionCount(subj);
-                  
+
                   return (
-                    <SelectItem 
-                      key={subj} 
-                      value={subj}
-                      disabled={!available}
-                    >
+                    <SelectItem key={subj} value={subj} disabled={!available}>
                       <div className="flex items-center justify-between gap-3 w-full">
-                        <span className={available ? '' : 'text-gray-400'}>
+                        <span className={available ? "" : "text-gray-400"}>
                           {subj}
                         </span>
                         {available ? (
                           <span className="text-xs text-green-600 font-medium">
-                            {questionCount} questions
+                            {/* {questionCount} questions */}
                           </span>
                         ) : (
                           <span className="text-xs text-gray-400 font-medium">
@@ -260,20 +292,26 @@ export default function TestConfiguration({
             </Select>
             {discipline && !subject && (
               <p className="text-sm text-muted-foreground mt-1">
-                {availableSubjects.length > 0 
+                {availableSubjects.length > 0
                   ? `${availableSubjects.length} subject(s) currently available`
-                  : 'No subjects available yet'}
+                  : "No subjects available yet"}
               </p>
             )}
           </div>
 
           {/* Number of Questions */}
           <div className="space-y-2">
-            <Label htmlFor="questions" className="text-base font-semibold flex items-center gap-2">
+            <Label
+              htmlFor="questions"
+              className="text-base font-semibold flex items-center gap-2"
+            >
               <ListChecks className="w-4 h-4" />
               Number of Questions
             </Label>
-            <Select value={numberOfQuestions} onValueChange={setNumberOfQuestions}>
+            <Select
+              value={numberOfQuestions}
+              onValueChange={setNumberOfQuestions}
+            >
               <SelectTrigger id="questions" className="h-12">
                 <SelectValue />
               </SelectTrigger>
@@ -281,19 +319,25 @@ export default function TestConfiguration({
                 <SelectItem value="20">
                   <div className="flex items-center justify-between gap-8">
                     <span>20 Questions</span>
-                    <span className="text-xs text-muted-foreground">Quick Practice</span>
+                    <span className="text-xs text-muted-foreground">
+                      Quick Practice
+                    </span>
                   </div>
                 </SelectItem>
                 <SelectItem value="50">
                   <div className="flex items-center justify-between gap-8">
                     <span>50 Questions</span>
-                    <span className="text-xs text-muted-foreground">Standard Test</span>
+                    <span className="text-xs text-muted-foreground">
+                      Standard Test
+                    </span>
                   </div>
                 </SelectItem>
                 <SelectItem value="100">
                   <div className="flex items-center justify-between gap-8">
                     <span>100 Questions</span>
-                    <span className="text-xs text-muted-foreground">Full Exam</span>
+                    <span className="text-xs text-muted-foreground">
+                      Full Exam
+                    </span>
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -302,7 +346,10 @@ export default function TestConfiguration({
 
           {/* Duration */}
           <div className="space-y-2">
-            <Label htmlFor="duration" className="text-base font-semibold flex items-center gap-2">
+            <Label
+              htmlFor="duration"
+              className="text-base font-semibold flex items-center gap-2"
+            >
               <Clock className="w-4 h-4" />
               Test Duration
             </Label>
@@ -332,12 +379,22 @@ export default function TestConfiguration({
           {/* Test Summary */}
           {isFormValid() && (
             <Card className="p-4 bg-primary/5 border-primary/20">
-              <h3 className="font-semibold mb-2 text-sm text-gray-700">Test Summary:</h3>
+              <h3 className="font-semibold mb-2 text-sm text-gray-700">
+                Test Summary:
+              </h3>
               <div className="space-y-1 text-sm text-gray-600">
-                <p>• <strong>Discipline:</strong> {selectedDisciplineData?.name}</p>
-                <p>• <strong>Subject:</strong> {subject}</p>
-                <p>• <strong>Questions:</strong> {numberOfQuestions}</p>
-                <p>• <strong>Duration:</strong> {duration} minutes</p>
+                <p>
+                  • <strong>Discipline:</strong> {selectedDisciplineData?.name}
+                </p>
+                <p>
+                  • <strong>Subject:</strong> {subject}
+                </p>
+                <p>
+                  • <strong>Questions:</strong> {numberOfQuestions}
+                </p>
+                <p>
+                  • <strong>Duration:</strong> {duration} minutes
+                </p>
               </div>
             </Card>
           )}

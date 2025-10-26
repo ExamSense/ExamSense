@@ -172,11 +172,18 @@ export default function Navigation() {
                     Profile
                   </Link>
                   <Link
-                    to="/results"
+                    to="/report"
                     onClick={closeMenu}
                     className="block text-foreground/80 hover:text-foreground hover:bg-accent px-4 py-2 rounded-md transition-colors mb-2"
                   >
-                    Results
+                    Report
+                  </Link>
+                  <Link
+                    to="/history"
+                    onClick={closeMenu}
+                    className="block text-foreground/80 hover:text-foreground hover:bg-accent px-4 py-2 rounded-md transition-colors mb-2"
+                  >
+                    History
                   </Link>
                   <Button
                     variant="outline"
