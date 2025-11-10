@@ -14,6 +14,7 @@ import Test from "./pages/Test";
 import Results from "./pages/Results";
 import Report from "./pages/Report";
 import History from "./pages/History";
+import Profile from "./pages/Profile";
 import Videos from "./pages/Videos";
 import Testimonials from "./pages/Testimonials";
 import NotFound from "./pages/NotFound";
@@ -96,7 +97,15 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                }
+              />
+
               {/* Catch-all */}
               <Route path="*" element={<NotFound />} />
             </Routes>
